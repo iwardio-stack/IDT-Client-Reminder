@@ -225,9 +225,12 @@ class MainActivity : Activity() {
 
     private fun newJob(editIndex: Int) {
         val jobs = loadJobs()
-        val existing = if (editIndex >= 0 && editIndex < jobs.length() {
+
+        val existing = if (editIndex >= 0 && editIndex < jobs.length()) {
             jobs.getJSONObject(editIndex)
-        } else null
+        } else {
+            null
+        }
 
         setupScreen(if (existing == null) "NEW JOB" else "EDIT JOB")
 
@@ -342,7 +345,8 @@ class MainActivity : Activity() {
             setPadding(4, 16, 4, 6)
         })
         contentLayout.addView(input, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
         ))
     }
 
