@@ -5,12 +5,13 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.os.Bundle
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -59,7 +60,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun button(
+    private fun makeButton(
         title: String,
         subtitle: String,
         color: Int,
@@ -159,8 +160,8 @@ class MainActivity : Activity() {
             newJob()
         }
 
-        addCard("READY FOR COLLECTION", "Prepare a collection reminder", orange) {
-            collectionInfo()
+        addCard("READY FOR COLLECTION", "Schedule collection and WhatsApp clients", orange) {
+            savedJobs()
         }
 
         addCard("ALL REMINDERS", "View your saved client jobs", green) {
@@ -175,10 +176,9 @@ class MainActivity : Activity() {
             setPadding(0, 24, 0, 12)
         })
 
-        val count = loadJobs().length()
-
+        val jobs = loadJobs()
         contentLayout.addView(label(
-            "Saved Jobs: $count",
+            "Saved Jobs: ${jobs.length()}",
             17f, white, true
         ).apply {
             setPadding(16, 18, 16, 18)
@@ -192,7 +192,7 @@ class MainActivity : Activity() {
             setPadding(0, 24, 0, 12)
         })
 
-        if (count == 0) {
+        if (jobs.length() == 0) {
             contentLayout.addView(label(
                 "No jobs saved yet.",
                 14f, grey
@@ -201,13 +201,23 @@ class MainActivity : Activity() {
                 background = bg(cardBlack)
             })
         } else {
-            val jobs = loadJobs()
             for (i in jobs.length() - 1 downTo maxOf(0, jobs.length() - 3)) {
                 val job = jobs.getJSONObject(i)
-                contentLayout.addView(label(
-                    "${job.optString("client")}\\n${job.optString("project")}\\n${job.optString("date")} at ${job.optString("time")}",
-                    15f, white
-                ).apply {
+                val collectionDate = job.optString("collectionDate", "")
+                val summary = buildString {
+                    append(job.optString("client"))
+                    append("\nInstallation: ")
+                    append(job.optString("date"))
+                    append(" at ")
+                    append(job.optString("time"))
+                    if (collectionDate.isNotBlank()) {
+                        append("\nCollection: ")
+                        append(collectionDate)
+                        append(" at ")
+                        append(job.optString("collectionTime"))
+                    }
+                }
+                contentLayout.addView(label(summary, 15f, white).apply {
                     setPadding(16, 16, 16, 16)
                     background = bg(cardBlack)
                 })
@@ -221,7 +231,7 @@ class MainActivity : Activity() {
         color: Int,
         action: () -> Unit
     ) {
-        val card = button(title, subtitle, color, action)
+        val card = makeButton(title, subtitle, color, action)
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -259,42 +269,45 @@ class MainActivity : Activity() {
             }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show()
         }
 
-        addFormField("CLIENT", client)
-        addFormField("WHATSAPP", phone)
+        addFormField("CLIENT NAME", client)
+        addFormField("WHATSAPP NUMBER", phone)
         addFormField("JOB DESCRIPTION", project)
         addFormField("ADDRESS", address)
         addFormField("INSTALLATION DATE", date)
         addFormField("INSTALLATION TIME", time)
         addFormField("NOTES", notes)
 
-        val save = button("SAVE JOB", "Save this client and installation", green) {
+        val save = makeButton("SAVE JOB", "Save client and installation details", green) {
             if (client.text.toString().trim().isEmpty() ||
                 phone.text.toString().trim().isEmpty() ||
-                project.text.toString().trim().isEmpty()) {
+                project.text.toString().trim().isEmpty() ||
+                date.text.toString().trim().isEmpty() ||
+                time.text.toString().trim().isEmpty()) {
 
                 AlertDialog.Builder(this)
-                    .setMessage("Please fill in Client name, WhatsApp number and Job description.")
+                    .setMessage("Please fill in Client name, WhatsApp number, Job description, installation date and time.")
                     .setPositiveButton("OK", null)
                     .show()
             } else {
                 val jobs = loadJobs()
                 val job = JSONObject().apply {
-                    put("client", client.text.toString())
-                    put("phone", phone.text.toString())
-                    put("project", project.text.toString())
-                    put("address", address.text.toString())
+                    put("client", client.text.toString().trim())
+                    put("phone", phone.text.toString().trim())
+                    put("project", project.text.toString().trim())
+                    put("address", address.text.toString().trim())
                     put("date", date.text.toString())
                     put("time", time.text.toString())
                     put("notes", notes.text.toString())
-                    put("collection", false)
+                    put("collectionDate", "")
+                    put("collectionTime", "")
                 }
                 jobs.put(job)
                 prefs.edit().putString("jobs", jobs.toString()).apply()
 
                 AlertDialog.Builder(this)
                     .setTitle("JOB SAVED")
-                    .setMessage("The client and job details have been saved on this phone.")
-                    .setPositiveButton("OK") { _, _ -> dashboard() }
+                    .setMessage("Client and installation details saved on this phone.")
+                    .setPositiveButton("OK") { _, _ -> savedJobs() }
                     .show()
             }
         }
@@ -334,6 +347,10 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun saveJobs(jobs: JSONArray) {
+        prefs.edit().putString("jobs", jobs.toString()).apply()
+    }
+
     private fun savedJobs() {
         setupScreen("SAVED JOBS")
 
@@ -361,7 +378,7 @@ class MainActivity : Activity() {
                 setPadding(0, 8, 0, 8)
             })
             card.addView(label(
-                "Date: ${job.optString("date")}   Time: ${job.optString("time")}",
+                "Installation: ${job.optString("date")} at ${job.optString("time")}",
                 14f, orange
             ))
             card.addView(label(
@@ -377,34 +394,155 @@ class MainActivity : Activity() {
                 setPadding(0, 6, 0, 0)
             })
 
+            val collectionDate = job.optString("collectionDate", "")
+            val collectionTime = job.optString("collectionTime", "")
+            val collectionLabel = if (collectionDate.isNotBlank()) {
+                "Collection: $collectionDate at $collectionTime"
+            } else {
+                "Collection not scheduled"
+            }
+
+            card.addView(label(collectionLabel, 14f, orange, true).apply {
+                setPadding(0, 12, 0, 6)
+            })
+
+            val installButton = actionButton("INSTALLATION WHATSAPP", green) {
+                sendInstallationWhatsApp(job)
+            }
+            card.addView(installButton)
+
+            val scheduleButton = actionButton("SCHEDULE COLLECTION", orange) {
+                scheduleCollection(i)
+            }
+            card.addView(scheduleButton)
+
+            val collectionButton = actionButton("COLLECTION WHATSAPP", green) {
+                sendCollectionWhatsApp(job)
+            }
+            card.addView(collectionButton)
+
             card.setOnClickListener {
-                AlertDialog.Builder(this)
-                    .setTitle(job.optString("client"))
-                    .setMessage(
-                        "Job: ${job.optString("project")}\\n" +
-                        "Date: ${job.optString("date")}\\n" +
-                        "Time: ${job.optString("time")}\\n" +
-                        "WhatsApp: ${job.optString("phone")}\\n" +
-                        "Address: ${job.optString("address")}\\n" +
-                        "Notes: ${job.optString("notes")}"
-                    )
-                    .setPositiveButton("OK", null)
-                    .show()
+                showJobDetails(job)
             }
 
             contentLayout.addView(card, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 0, 0, 14)
+                setMargins(0, 0, 0, 16)
             })
         }
     }
 
-    private fun collectionInfo() {
+    private fun actionButton(title: String, color: Int, action: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = title
+            textSize = 14f
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            setTypeface(null, Typeface.BOLD)
+            setPadding(12, 18, 12, 18)
+            background = bg(black, color)
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun scheduleCollection(index: Int) {
+        val dateCal = Calendar.getInstance()
+
+        DatePickerDialog(this, { _, year, month, day ->
+            val chosenDate = String.format("%02d/%02d/%04d", day, month + 1, year)
+
+            TimePickerDialog(this, { _, hour, minute ->
+                val chosenTime = String.format("%02d:%02d", hour, minute)
+
+                val jobs = loadJobs()
+                if (index >= 0 && index < jobs.length()) {
+                    val job = jobs.getJSONObject(index)
+                    job.put("collectionDate", chosenDate)
+                    job.put("collectionTime", chosenTime)
+                    saveJobs(jobs)
+
+                    AlertDialog.Builder(this)
+                        .setTitle("COLLECTION SCHEDULED")
+                        .setMessage("$chosenDate at $chosenTime")
+                        .setPositiveButton("OK") { _, _ -> savedJobs() }
+                        .show()
+                }
+            }, dateCal.get(Calendar.HOUR_OF_DAY), dateCal.get(Calendar.MINUTE), true).show()
+
+        }, dateCal.get(Calendar.YEAR), dateCal.get(Calendar.MONTH),
+            dateCal.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
+    private fun sendInstallationWhatsApp(job: JSONObject) {
+        val client = job.optString("client")
+        val date = job.optString("date")
+        val time = job.optString("time")
+
+        val message = "Good day $client. This is a friendly reminder that your installation is scheduled for $date at $time. If this is not a convenient time, please reply to this message so we can reschedule. Kind regards, I.D.T. Steelworks & Engineering."
+
+        openWhatsApp(job.optString("phone"), message)
+    }
+
+    private fun sendCollectionWhatsApp(job: JSONObject) {
+        val client = job.optString("client")
+        val date = job.optString("collectionDate", "")
+        val time = job.optString("collectionTime", "")
+
+        if (date.isBlank() || time.isBlank()) {
+            AlertDialog.Builder(this)
+                .setMessage("Please schedule a collection date and time first.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val message = "Good day $client. Your order is ready for collection. Your collection is scheduled for $date at $time. If this is not a convenient time, please reply to this message so we can reschedule. Kind regards, I.D.T. Steelworks & Engineering."
+
+        openWhatsApp(job.optString("phone"), message)
+    }
+
+    private fun openWhatsApp(phoneInput: String, message: String) {
+        var phone = phoneInput.filter { it.isDigit() }
+
+        if (phone.startsWith("0")) {
+            phone = "27" + phone.substring(1)
+        }
+
+        if (phone.isBlank()) {
+            AlertDialog.Builder(this)
+                .setMessage("This job does not have a valid WhatsApp number.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val url = "https://wa.me/$phone?text=${Uri.encode(message)}"
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        } catch (e: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle("WhatsApp unavailable")
+                .setMessage("Could not open WhatsApp. Please check that WhatsApp is installed.")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun showJobDetails(job: JSONObject) {
         AlertDialog.Builder(this)
-            .setTitle("Collection Reminder")
-            .setMessage("Collection reminders will be linked to saved jobs in our next step.")
+            .setTitle(job.optString("client"))
+            .setMessage(
+                "Job: ${job.optString("project")}\n" +
+                "Installation: ${job.optString("date")} at ${job.optString("time")}\n" +
+                "Collection: ${job.optString("collectionDate")} at ${job.optString("collectionTime")}\n" +
+                "WhatsApp: ${job.optString("phone")}\n" +
+                "Address: ${job.optString("address")}\n" +
+                "Notes: ${job.optString("notes")}"
+            )
             .setPositiveButton("OK", null)
             .show()
     }
